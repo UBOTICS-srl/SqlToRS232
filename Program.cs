@@ -32,6 +32,8 @@ namespace SqlToRs232
         private SqlConnection DbConnection;
         public int contatore = 0;
 
+        private DateTime startTime;
+
         [DllImport("kernel32.dll")]
         static extern IntPtr GetConsoleWindow();
 
@@ -120,35 +122,62 @@ namespace SqlToRs232
                 }
 
                 ShowWindow(GetConsoleWindow(), 0);
+
                 bool flag = true;
+
                 while (flag)
                 {
                     try
                     {
-                        ComPort.Open();
-                        DbConnection.Open();
+                        Console.Clear();
+                        Console.WriteLine("\nPremere INVIO per uscire dall'applicazione...\n");
+                        Console.WriteLine($"Applicazione partita alle ore {startTime:HH:mm:ss.fff}");
+
+                        try
+                        {
+                            ComPort.Open();
+                        }
+                        catch
+                        {
+                            Console.WriteLine($"Impossibile aprire la porta {ComPort.PortName}");
+                            Console.WriteLine($"Ritento in 5 secondi...");
+                            Thread.Sleep(4000);
+                            ComPort.Dispose();
+                            ComPort = GetSerialSettings();
+                            Thread.Sleep(1000);
+                            throw;
+                        }
+
+                        try
+                        {
+                            DbConnection.Open();
+                        }
+                        catch
+                        {
+                            Console.WriteLine($"Impossibile connettersi al DataBase");
+                            Console.WriteLine($"Ritento in 5 secondi...");
+                            Thread.Sleep(5000);
+                            throw;
+                        }
+
                         flag = false;
                         SetTimer();
                     }
                     catch
                     {
                         flag = true;
-                        Thread.Sleep(5000);
-                        ComPort.Dispose();
-                        //comPort = new SerialPort("COM3", 9600, Parity.None, 8, StopBits.One);
-                        ComPort = GetSerialSettings();
-                        Thread.Sleep(1000);
                     }
                 }
 
-                Console.WriteLine("\nPress the Enter key to exit the application...\n");
-                Console.WriteLine($"The application started at {(object)DateTime.Now:HH:mm:ss.fff}");
+                startTime = DateTime.Now;
+                Console.WriteLine("\nPremere INVIO per uscire dall'applicazione...\n");
+                Console.WriteLine($"Applicazione partita alle ore {startTime:HH:mm:ss.fff}");
                 Console.ReadLine();
 
                 aTimer.Stop();
                 aTimer.Dispose();
 
-                Console.WriteLine("Terminating the application...");
+                Console.WriteLine("Chiusura dell'applicazione in corso...");
                 ComPort.Close();
                 DbConnection.Close();
             }
@@ -174,14 +203,43 @@ namespace SqlToRs232
         {
             aTimer.Enabled = false;
 
+            Console.Clear();
+
+            Console.WriteLine("\nPremere INVIO per uscire dall'applicazione...\n");
+            Console.WriteLine($"Applicazione partita alle ore {startTime:HH:mm:ss.fff}");
+
+            Console.WriteLine($"Lettura della tabella {TableName}");
             SqlDataReader sqlDataReader = new SqlCommand($"SELECT TOP 1 Peso1 FROM {TableName}", DbConnection).ExecuteReader();
 
             bool hasRows = sqlDataReader.Read();
 
             if (hasRows)
             {
-                int int32 = Convert.ToInt32(sqlDataReader.GetDouble(0));
-                ComPort.Write($"P+{$"{(object)int32,6:D6}"}\r");
+                int dbPeso = Convert.ToInt32(sqlDataReader.GetDouble(0));
+                Console.WriteLine($"Letto peso {dbPeso}");
+
+                try
+                {
+                    Console.WriteLine($"Invio peso {dbPeso} alla porta {ComPort.PortName}");
+
+                    string scaleCommand = $"P+{$"{dbPeso,6:D6}"}\r";
+                    string printScaleCommand = $"P+{$"{dbPeso,6:D6}"}\\r";
+
+                    Console.WriteLine($"Invio comando {printScaleCommand} alla porta {ComPort.PortName}");
+
+                    if (Debugger.IsAttached == false)
+                    {
+                        ComPort.Write(scaleCommand);
+                    }
+                }
+                catch
+                {
+                    Console.WriteLine($"Impossibile inviare il peso alla porta {ComPort.PortName}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Nessuna riga nella tabella {TableName}");
             }
 
             sqlDataReader.Close();
@@ -200,7 +258,6 @@ namespace SqlToRs232
 
     class Program
     {
-
         public static void Main(string[] args)
         {
             DbToSerial instance = new DbToSerial();
